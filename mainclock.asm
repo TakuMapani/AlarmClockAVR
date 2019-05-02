@@ -254,6 +254,8 @@ main_loop:
 	breq updating
 	rjmp	main_loop
 
+;********************************ALARM******************************************
+
   updating:
   call update_dayF
 
