@@ -10,6 +10,7 @@
 	secCountDis: .byte 1
 	setDis: .byte 2
 	month: .byte 1
+	year: .byte 1
 
 ;display values needed
   setAM_PM: .byte 2 ; 0x41 0x4d(AM) or 0x50 0x4D (PM)
@@ -209,7 +210,7 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
   sts slashYear, r16
   sts slashMonth,r16
 
-  ldi r16,0x32
+  ldi r16,0x31
   sts dayTenth,r16
 
   ldi r16,0x39
@@ -226,6 +227,12 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
 
   ldi r16,0x39
   sts yearUnit,r16
+
+	ldi r16,19
+	sts year, r16
+
+	ldi r16,2
+	sts month, r16
 
 
 	;setup display data variables
@@ -248,7 +255,7 @@ main_loop:
 	rjmp	main_loop
 
   updating:
-  call update_minuteF
+  call update_dayF
 
 	display_update:
 	ldi		r24,0x27
@@ -270,64 +277,64 @@ main_loop:
 	rjmp	main_loop	; after interrupt do it again
 
   update_time:
-  push r16
-  push r17
-  lds r16,sUnit
-  lds r17,sTenth
+	  push r16
+	  push r17
+	  lds r16,sUnit
+	  lds r17,sTenth
 
-  cpi r16,0x39
-  breq update_sTenth
-  inc r16
-  rjmp return_s
+	  cpi r16,0x39
+	  breq update_sTenth
+	  inc r16
+	  rjmp return_s
 
-  update_sTenth:
-  ldi r16,0x30
-  cpi r17,0x35
-  breq update_minute
-  inc r17
-  rjmp return_s
+	  update_sTenth:
+	  ldi r16,0x30
+	  cpi r17,0x35
+	  breq update_minute
+	  inc r17
+	  rjmp return_s
 
-  update_minute:
-  call update_minuteF
-  ldi r17,0x30
+	  update_minute:
+	  call update_minuteF
+	  ldi r17,0x30
 
-  return_s:
-  sts sUnit,r16
-  sts sTenth, r17
+	  return_s:
+	  sts sUnit,r16
+	  sts sTenth, r17
 
-  pop r17
-  pop r16
-  ret
+	  pop r17
+	  pop r16
+	  ret
 ;***************************update_minute***************************************
   update_minuteF:
-  push r16
-  push r17
-  lds r16,mUnit
-  lds r17,mTenth
+	  push r16
+	  push r17
+	  lds r16,mUnit
+	  lds r17,mTenth
 
-  cpi r16,0x39
-  breq update_mTenth
-  inc r16
-  rjmp return_m
+	  cpi r16,0x39
+	  breq update_mTenth
+	  inc r16
+	  rjmp return_m
 
-  update_mTenth:
-  ldi r16,0x30
-  cpi r17,0x35
-  breq update_hour
-  inc r17
-  rjmp return_m
+	  update_mTenth:
+	  ldi r16,0x30
+	  cpi r17,0x35
+	  breq update_hour
+	  inc r17
+	  rjmp return_m
 
-  update_hour:
-  call update_hourF
-  ldi r17,0x30
+	  update_hour:
+	  call update_hourF
+	  ldi r17,0x30
 
-  return_m:
-  sts mUnit,r16
-  sts mTenth, r17
+	  return_m:
+	  sts mUnit,r16
+	  sts mTenth, r17
 
-  pop r17
-  pop r16
-  ret
+	  pop r17
+	  pop r16
+	  ret
 
 ;*******************************update_hourF************************************
   update_hourF:
@@ -359,7 +366,7 @@ main_loop:
 	;  call update_hourF
 	  ;ldi r17,0x30
 
-	  special_update:
+	 special_update:
 	  cpi r16,0x32
 	  breq update_hTenth1
 	  inc r16
@@ -407,33 +414,42 @@ update_dayF:
 	lds r17, dayTenth
 	lds r18, month
 	mov r19,r18 ; make a copy of month to use for Modulus
-	mov r20,r18
+	lds r20,year
 
 	cpi r18,8
-	brlt before_august
+	brlo before_august
 
 
 	before_august:
-	andi r19,0xFE
-	tst r19
+	andi r19,0x01
+	cpi r19,0
 	breq first_half_31days
+
+	after_august
+	inc r17
+	rjmp return_day
 
 	first_half_not_31days:
 		cpi r18,2
 		breq february_update
+		cpi r16,0x39
+		breq inc_dayTenth
+		inc r16
+		rjmp return_day
 
 		february_update:
 			cpi r17,0x32
 			breq leap_year_maybe
 
-			cpi r16,9
+			cpi r16,0x39
 			breq inc_dayTenth
 
 			leap_year_maybe:
-				andi r20,0xFC
-				tst r20
+				andi r20,0x03
+				cpi r20,0
 				breq leap_year
 				cpi r16,0x38
+				breq reset_month
 				inc r16
 				rjmp return_day
 
@@ -445,15 +461,22 @@ update_dayF:
 
 
 	first_half_31days:
-		cpi r17,0x33
-		breq last_2_days
-		cpi r16,9
+		cpi r16,0x39
 		breq inc_dayTenth
 		inc r16
-		rjmp return day
+		rjmp return_day
 
 		inc_dayTenth:
 		ldi r16,0x30
+		cpi r17,0x33
+		breq last_2_days
+		inc r17
+		rjmp return_day
+
+		inc_dayTenth30:
+		ldi r16,0x30
+		cpi r17,0x33
+		breq reset_month
 		inc r17
 		rjmp return_day
 
@@ -465,14 +488,16 @@ update_dayF:
 
 	reset_month:
 	ldi r16,0x30
-	ldi r16,0x30
+	ldi r17,0x30
 	inc r18
 	rjmp return_day
+
+
 
 	return_day:
 
 	sts dayUnit,r16
-	sts inc_dayTenth, r17
+	sts dayTenth, r17
 	sts month,r18
 	pop r20
 	pop r19
@@ -505,8 +530,8 @@ t1_int_in_3Sec:
 	sts	TCCR1B,r16	; temporarily stop the clock
 	ldi	r16,0b00000000	; port A normal, port B normal, WGM=0000 (Normal)
 	sts	TCCR1A,r16
-	ldi	r17,HIGH(1000)	; set counter to 46875
-	ldi	r16,LOW(1000)
+	ldi	r17,HIGH(15625)	; set counter to 46875
+	ldi	r16,LOW(15625)
 	sts	OCR1AH,r17
 	sts	OCR1AL,r16
 	clr	r16		; clear current count
