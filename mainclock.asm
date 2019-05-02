@@ -210,10 +210,10 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
   sts slashYear, r16
   sts slashMonth,r16
 
-  ldi r16,0x31
+  ldi r16,0x32
   sts dayTenth,r16
 
-  ldi r16,0x39
+  ldi r16,0x34
   sts dayUnit,r16
 
   ldi r16,0x30
@@ -228,7 +228,7 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
   ldi r16,0x39
   sts yearUnit,r16
 
-	ldi r16,19
+	ldi r16,12
 	sts year, r16
 
 	ldi r16,2
@@ -404,7 +404,6 @@ main_loop:
 
 ;**************************update_dayF***************************************
 update_dayF:
-update_dayF:
 	push r16
 	push r17
 	push r18
@@ -433,6 +432,10 @@ update_dayF:
 	first_half_not_31days:
 		cpi r18,2
 		breq february_update
+
+		cpi r17,0x33 ;check to see if its the 30th and reset date
+		breq reset_month
+
 		cpi r16,0x39
 		breq inc_dayTenth
 		inc r16
@@ -444,6 +447,8 @@ update_dayF:
 
 			cpi r16,0x39
 			breq inc_dayTenth
+			inc r16
+			rjmp return_day
 
 			leap_year_maybe:
 				andi r20,0x03
@@ -535,8 +540,8 @@ t1_int_in_3Sec:
 	sts	TCCR1B,r16	; temporarily stop the clock
 	ldi	r16,0b00000000	; port A normal, port B normal, WGM=0000 (Normal)
 	sts	TCCR1A,r16
-	ldi	r17,HIGH(15625)	; set counter to 46875
-	ldi	r16,LOW(15625)
+	ldi	r17,HIGH(5625)	; set counter to 46875
+	ldi	r16,LOW(5625)
 	sts	OCR1AH,r17
 	sts	OCR1AL,r16
 	clr	r16		; clear current count
