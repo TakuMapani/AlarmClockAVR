@@ -1,8 +1,6 @@
 ;
 ; Briefing_Timers_Period.asm
 ;
-; Created: 4/04/2018 12:33:00 PM
-; Author : mq20162718
 ;
 .DSEG
 	.org 0x0500
