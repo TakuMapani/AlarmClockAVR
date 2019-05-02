@@ -404,6 +404,7 @@ main_loop:
 
 ;**************************update_dayF***************************************
 update_dayF:
+update_dayF:
 	push r16
 	push r17
 	push r18
@@ -423,11 +424,11 @@ update_dayF:
 	before_august:
 	andi r19,0x01
 	cpi r19,0
-	breq first_half_31days
+	brne first_half_31days
 
-	after_august
+	/*after_august:
 	inc r17
-	rjmp return_day
+	rjmp return_day*/
 
 	first_half_not_31days:
 		cpi r18,2
@@ -461,6 +462,8 @@ update_dayF:
 
 
 	first_half_31days:
+		cpi r17,0x33
+		breq last_2_days
 		cpi r16,0x39
 		breq inc_dayTenth
 		inc r16
@@ -484,6 +487,7 @@ update_dayF:
 		cpi r16,0x31
 		breq reset_month
 		inc r16
+		rjmp return_day
 
 
 	reset_month:
@@ -506,6 +510,7 @@ update_dayF:
 	pop r16
 	ret
 
+;******************************************************************************
 ;
 ; Enable an interrupt in 3 seconds using timer 1.
 ;
