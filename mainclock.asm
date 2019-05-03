@@ -534,11 +534,12 @@ update_dayF:
 update_monthF:
 	push r16
 	push r17
+	push r18
 
 
 	lds r16,monthUnit
 	lds r17,monthTenth
-	;lds r18,month
+	lds r18,month
 
 	cpi r17,0x31
 	breq update_last_2
@@ -560,13 +561,16 @@ update_monthF:
 
 	update_year:
 	call update_yearF
+	ldi r18,0x31
 	ldi r16,0x31
 	ldi r17,0x30
 
 	return_month:
 	sts monthUnit,r16
 	sts monthTenth, r17
+	sts month,r18
 
+	pop r18
 	pop r17
 	pop r16
 	ret
