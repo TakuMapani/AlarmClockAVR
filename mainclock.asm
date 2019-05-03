@@ -1,6 +1,8 @@
 ;
 ; Briefing_Timers_Period.asm
 ;
+; Created: XX/03/2019 12:33:00 PM
+; Author : TakuMapani
 ;
 .DSEG
 	.org 0x0500
@@ -32,7 +34,7 @@
   slashYear: .byte 1
 
   monthTenth: .byte 1
-  monthUnt: .byte 1
+  monthUnit: .byte 1
   slashMonth: .byte 1
 
   yearTenth: .byte 1
@@ -208,17 +210,17 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
   sts slashYear, r16
   sts slashMonth,r16
 
-  ldi r16,0x31
+  ldi r16,0x32
   sts dayTenth,r16
 
-  ldi r16,0x39
+  ldi r16,0x32
   sts dayUnit,r16
 
   ldi r16,0x30
   sts monthTenth,r16
 
-  ldi r16,0x34
-  sts monthUnt,r16
+  ldi r16,0x32
+  sts monthUnit,r16
 
   ldi r16,0x31
   sts yearTenth,r16
@@ -226,7 +228,7 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
   ldi r16,0x39
   sts yearUnit,r16
 
-	ldi r16,19
+	ldi r16,12
 	sts year, r16
 
 	ldi r16,2
@@ -257,8 +259,10 @@ main_loop:
 
 	display_update:
 	ldi		r24,0x27
-	call	LCD_Setup
-	call	LCD_Clear
+	;call	LCD_Setup
+	;call	LCD_Clear
+	ldi		r25,0x00
+	call	LCD_Position
 	ldi		ZL,LOW(setAM_PM)
 	ldi		ZH,HIGH(setAM_PM)
 	ldi		r25,11
@@ -286,7 +290,7 @@ main_loop:
 	  rjmp return_s
 
 	  update_sTenth:
-	  ldi r16,0x30
+	  ldi r16,0x31
 	  cpi r17,0x35
 	  breq update_minute
 	  inc r17
@@ -316,7 +320,7 @@ main_loop:
 	  rjmp return_m
 
 	  update_mTenth:
-	  ldi r16,0x30
+	  ldi r16,0x31
 	  cpi r17,0x35
 	  breq update_hour
 	  inc r17
@@ -417,19 +421,40 @@ update_dayF:
 	cpi r18,8
 	brlo before_august
 
+	after_august:
+	andi r19,0x01
+	cpi r19,0
+	brne second_half_30_days
+
+	second_half_31_days:
+		cpi r17,0x33
+		breq last_2_days
+		cpi r16,0x39
+		breq inc_dayTenth
+		inc r16
+		rjmp return_day
+
+	second_half_30_days:
+		cpi r17,0x33
+		breq reset_month
+
+		cpi r16,0x39
+		breq inc_dayTenth
+		inc r16
+		rjmp return_day
 
 	before_august:
 	andi r19,0x01
 	cpi r19,0
-	breq first_half_31days
-
-	after_august
-	inc r17
-	rjmp return_day
+	brne first_half_31days
 
 	first_half_not_31days:
 		cpi r18,2
 		breq february_update
+
+		cpi r17,0x33 ;check to see if its the 30th and reset date
+		breq reset_month
+
 		cpi r16,0x39
 		breq inc_dayTenth
 		inc r16
@@ -441,6 +466,8 @@ update_dayF:
 
 			cpi r16,0x39
 			breq inc_dayTenth
+			inc r16
+			rjmp return_day
 
 			leap_year_maybe:
 				andi r20,0x03
@@ -459,35 +486,34 @@ update_dayF:
 
 
 	first_half_31days:
+		cpi r17,0x33
+		breq last_2_days
 		cpi r16,0x39
 		breq inc_dayTenth
 		inc r16
 		rjmp return_day
 
-		inc_dayTenth:
+	inc_dayTenth:
 		ldi r16,0x30
 		cpi r17,0x33
 		breq last_2_days
 		inc r17
 		rjmp return_day
 
-		inc_dayTenth30:
-		ldi r16,0x30
-		cpi r17,0x33
-		breq reset_month
-		inc r17
-		rjmp return_day
+
 
 		last_2_days:
 		cpi r16,0x31
 		breq reset_month
 		inc r16
+		rjmp return_day
 
 
 	reset_month:
-	ldi r16,0x30
+	ldi r16,0x31
 	ldi r17,0x30
 	inc r18
+	call update_monthF
 	rjmp return_day
 
 
@@ -504,7 +530,80 @@ update_dayF:
 	pop r16
 	ret
 
-;
+;****************************************update_monthF**************************
+update_monthF:
+	push r16
+	push r17
+	push r18
+
+
+	lds r16,monthUnit
+	lds r17,monthTenth
+	lds r18,month
+
+	cpi r17,0x31
+	breq update_last_2
+	cpi r16,0x39
+	breq update_monthTenth
+	inc r16
+	rjmp return_month
+
+	update_monthTenth:
+	ldi r16,0x30
+	inc r17
+	rjmp return_month
+
+	update_last_2:
+	cpi r16,0x32
+	breq update_year
+	inc r16
+	rjmp return_month
+
+	update_year:
+	call update_yearF
+	ldi r18,0x31
+	ldi r16,0x31
+	ldi r17,0x30
+
+	return_month:
+	sts monthUnit,r16
+	sts monthTenth, r17
+	sts month,r18
+
+	pop r18
+	pop r17
+	pop r16
+	ret
+
+;****************************update_yearF***************************************
+update_yearF:
+	push r16
+	push r17
+	lds r16,yearUnit
+	lds r17,yearTenth
+
+	cpi r16,0x39
+	breq update_yearTenth
+	inc r16
+	rjmp return_done
+
+	update_yearTenth:
+	ldi r16,0x30
+	cpi r17,0x39
+	breq done
+	inc r17
+	rjmp return_done
+
+	done:
+	ldi r17,0x30
+
+	return_done:
+	sts yearUnit,r16
+	sts yearTenth, r17
+
+	pop r17
+	pop r16
+	ret
 ; Enable an interrupt in 3 seconds using timer 1.
 ;
 ; The counter will be running at 16,000,000 HZ / 1024
@@ -528,8 +627,8 @@ t1_int_in_3Sec:
 	sts	TCCR1B,r16	; temporarily stop the clock
 	ldi	r16,0b00000000	; port A normal, port B normal, WGM=0000 (Normal)
 	sts	TCCR1A,r16
-	ldi	r17,HIGH(15625)	; set counter to 46875
-	ldi	r16,LOW(15625)
+	ldi	r17,HIGH(5625)	; set counter to 46875
+	ldi	r16,LOW(5625)
 	sts	OCR1AH,r17
 	sts	OCR1AL,r16
 	clr	r16		; clear current count
