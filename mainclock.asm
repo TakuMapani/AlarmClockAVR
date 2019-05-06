@@ -9,8 +9,10 @@
 	secCount: .byte 1
 	secCountDis: .byte 1
 	setDis: .byte 2
+	hour: .byte 1
 	month: .byte 1
 	year: .byte 1
+	dayLightSavings: .byte 1
 
 ;display values needed
   setAM_PM: .byte 2 ; 0x41 0x4d(AM) or 0x50 0x4D (PM)
@@ -39,6 +41,15 @@
 
   yearTenth: .byte 1
   yearUnit: .byte 1
+
+	;Alarm State and its representation
+	AlarmOn: .byte 1
+
+	AlarmHourTenth: .byte 1
+	AlarmHourUnit: .byte 1
+
+	AlarmMinTenth: .byte 1
+	AlarmMinUnit: .byte 1
 
 
 ; Demonstration of the Timer Usage and Periodic interrupt capabilities of the ATmega328
@@ -250,12 +261,34 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
 ; The main loop is just a sleep instruction
 ;
 main_loop:
-	cpi r20,2
-	breq updating
+	/* cpi r20,2
+	breq updating */
+	sleep
+	rjmp updating
 	rjmp	main_loop
 
   updating:
   call update_dayF
+	lds r16,AlarmOn
+	cpi r16,1
+	brne check_alarm
+	rjmp display_update
+
+	check_alarm:
+	call check_alarmF
+
+	check_alarmF:
+		push r16
+		push r17
+		push r18
+		push r19
+
+		lds r16,hTenth
+		lds r17,hUnit
+		lds r18,AlarmHourTenth
+		lds r19,AlarmHourUnit
+
+
 
 	display_update:
 	ldi		r24,0x27
@@ -340,6 +373,42 @@ main_loop:
 
 ;*******************************update_hourF************************************
   update_hourF:
+		call 12_24Mode
+		12_24Mode:
+			push r16
+			push r17
+			push r18
+			push r19
+			push r20
+
+			lds r16,hour
+			lds r17,hourMode
+			lds r18,hTenth
+			lds r19,hUnit
+
+			ldi r19,0x30
+			ldi r18,0x30
+
+			tst r17
+			breq 24_mode
+
+			24_mode:
+			mov r20,r16
+				mod10:
+				subi r20,10
+				inc r18
+				cpi r20,10
+				brlo continue
+				rjmp mod10
+				continue: add r19,r20
+				rjmp return_1224Mode
+
+			return_1224Mode:
+			sts 
+
+
+
+
 	  push r16
 	  push r17
 	  push r18
