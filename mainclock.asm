@@ -13,6 +13,8 @@
 	month: .byte 1
 	year: .byte 1
 	dayLightSavings: .byte 1
+	AMPM_mode: .byte 1
+	hourMode: .byte 1
 
 ;display values needed
   setAM_PM: .byte 2 ; 0x41 0x4d(AM) or 0x50 0x4D (PM)
@@ -43,7 +45,7 @@
   yearUnit: .byte 1
 
 	;Alarm State and its representation
-	AlarmOn: .byte 1
+	AlarmState: .byte 1
 
 	AlarmHourTenth: .byte 1
 	AlarmHourUnit: .byte 1
@@ -245,6 +247,12 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
 	ldi r16,12
 	sts month, r16
 
+	ldi r16,0
+	sts hourMode,r16
+
+	ldi r16,20
+	sts hour,r16
+
 
 	;setup display data variables
 	ldi yl,low(setdis)
@@ -261,15 +269,16 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
 ; The main loop is just a sleep instruction
 ;
 main_loop:
-	/* cpi r20,2
-	breq updating */
-	sleep
+	cpi r20,2
+	breq updating
+	;sleep
 	rjmp updating
 	rjmp	main_loop
 
   updating:
-  call update_dayF
-	lds r16,AlarmOn
+	call Mode12_24
+  call update_minuteF
+	/* lds r16,AlarmState
 	cpi r16,1
 	brne check_alarm
 	rjmp display_update
@@ -286,7 +295,7 @@ main_loop:
 		lds r16,hTenth
 		lds r17,hUnit
 		lds r18,AlarmHourTenth
-		lds r19,AlarmHourUnit
+		lds r19,AlarmHourUnit */
 
 
 
@@ -373,51 +382,29 @@ main_loop:
 
 ;*******************************update_hourF************************************
   update_hourF:
-		call 12_24Mode
-		12_24Mode:
-			push r16
-			push r17
-			push r18
-			push r19
-			push r20
-
-			lds r16,hour
-			lds r17,hourMode
-			lds r18,hTenth
-			lds r19,hUnit
-
-			ldi r19,0x30
-			ldi r18,0x30
-
-			tst r17
-			breq 24_mode
-
-			24_mode:
-			mov r20,r16
-				mod10:
-				subi r20,10
-				inc r18
-				cpi r20,10
-				brlo continue
-				rjmp mod10
-				continue: add r19,r20
-				rjmp return_1224Mode
-
-			return_1224Mode:
-			sts 
-
-
 
 
 	  push r16
 	  push r17
 	  push r18
+		push r19
+		push r20
+		push r21
+
 	  ldi YL,LOW(setAM_PM)
 	  ldi YH,HIGH(setAM_PM)
 	  ld r18,Y+
+		ld r19,Y
 
 	  lds r16,hUnit
 	  lds r17,hTenth
+		lds r20,hourMode
+		lds r21,hour
+
+
+
+		tst r20
+		breq Hour_24
 
 	  cpi r17,0x31
 	  breq special_update
@@ -433,9 +420,6 @@ main_loop:
 	  ldi r17,0x31
 	  rjmp return_h
 
-	  ;update_hour:
-	;  call update_hourF
-	  ;ldi r17,0x30
 
 	 special_update:
 	  cpi r16,0x32
@@ -449,6 +433,7 @@ main_loop:
 	    cpi r18,0x41
 	    breq updating_AM_PM
 	    ldi r18,0x41 ; change from PM to AM new day
+			clr r21 ; clear hour on update day
 	    call update_dayF
 	    rjmp return_h
 	    updating_AM_PM: ;change from AM to PM
@@ -460,14 +445,52 @@ main_loop:
 	  ldi r17,0x20
 	  rjmp return_h
 
+
+		Hour_24:
+			ldi r18,0x20
+			ldi r19,0x20
+		 cpi r17,0x32
+		 breq update_hTenth24Special
+		 cpi r16,0x39
+		 breq update_hTenth24
+		 inc r16
+		 inc r21
+		 rjmp return_h
+
+		 update_hTenth24:
+		 ldi r16,0x30
+		 inc r17
+		 inc r21
+		 rjmp return_h
+
+		 update_hTenth24Special:
+		 cpi r16,0x33
+		 breq update_day
+		 inc r16
+		 inc r21
+		 rjmp return_h
+
+		 update_day:
+		 ldi r17,0x30
+		 ldi r16,0x30
+		 clr r21
+		 call update_dayF
+		 rjmp return_h
+
+
 	  return_h:
 	  ldi YL,LOW(setAM_PM)
 	  ldi YH,HIGH(setAM_PM)
 	  st Y+,r18
+		st Y+,r19
 
 	  sts hUnit,r16
 	  sts hTenth, r17
+		sts hour,r21
 
+		pop r21
+		pop r20
+		pop r19
 	  pop r18
 	  pop r17
 	  pop r16
@@ -592,6 +615,8 @@ update_dayF:
 
 	sts dayUnit,r16
 	sts dayTenth, r17
+
+
 	pop r20
 	pop r19
 	pop r18
@@ -677,6 +702,145 @@ update_yearF:
 	sts year,r18
 
 	pop r18
+	pop r17
+	pop r16
+	ret
+
+;*****************************Mode12_24*****************************************
+Mode12_24:
+	push r16
+	push r17
+	push r18
+	push r19
+	push r20
+	push r21 ;scratch for 12 hour mode
+	push r22
+	push r23
+
+	lds r16,hour
+	lds r17,hourMode
+	ldi r23,0x30
+	lds r19,hUnit
+	lds r22,AMPM_mode
+
+	ldi r19,0x30
+	ldi r18,0x30
+
+	tst r17
+	breq Mode_24
+
+	mode_12:
+	mov r20,r16
+		mod12:
+		tst r20
+		breq continue12
+		subi r20,12
+		cpi r20,12
+		brlo continue12
+		inc r21
+		rjmp mod12
+
+		continue12:
+		tst r20
+		breq checkAM_PM
+		tst r21
+		breq AM_time
+
+		PM_time:
+		ldi r22,0x01
+		call setAMPM_mode
+		rjmp time_mode_set12
+
+		AM_time:
+		clr r22
+		call setAMPM_mode
+		rjmp time_mode_set12
+
+		time_mode_set12:
+		cpi r20,10
+		brlo time_less_than10
+		inc r18
+		add r23,r18
+		add r19,r20
+		rjmp return_1224Mode
+
+		time_less_than10:
+		add r19,r20
+		rjmp return_1224Mode
+
+		checkAM_PM:
+		cpi r21,1
+		breq itsPM
+		itsAM:
+		clr r22
+		sts AMPM_mode,r22
+		call setAMPM_mode
+
+
+		rjmp return_1224Mode
+
+		itsPM:
+		ldi r22,1
+		sts AMPM_mode,r22
+		call setAMPM_mode
+
+		inc r18
+		ldi r19,0x32
+		rjmp return_1224Mode
+
+
+	Mode_24:
+	mov r20,r16
+		mod10:
+		cpi r20,10
+		brlo continue24
+		subi r20,10
+		inc r18
+		cpi r20,10
+		brlo continue24
+		rjmp mod10
+		continue24: add r19,r20
+		add r23,r18
+		rjmp return_1224Mode
+
+	return_1224Mode:
+		sts hour,r16
+		sts hourMode,r17
+		sts hTenth,r18
+		sts hUnit,r19
+		sts AMPM_mode,r22
+
+		pop r23
+		pop r22
+		pop r21
+		pop r20
+		pop r19
+		pop r18
+		pop r17
+		pop r16
+		ret
+
+
+;********************Funtction AM PM mode***************************************
+setAMPM_mode:
+	push r16
+	push r17
+	lds r16,AMPM_mode
+
+
+	tst r16
+	breq setModeAM
+	ldi r17,0x50
+	rjmp return_modeAMPM
+
+	setModeAM:
+	ldi r17,0x41
+
+	return_modeAMPM:
+	ldi YL,LOW(setAM_PM)
+	ldi YH,HIGH(setAM_PM)
+	st Y+,r17
+
 	pop r17
 	pop r16
 	ret
