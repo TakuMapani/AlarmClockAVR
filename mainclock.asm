@@ -216,7 +216,7 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
   ldi r16,0x32
   sts dayUnit,r16
 
-  ldi r16,0x30
+  ldi r16,0x31
   sts monthTenth,r16
 
   ldi r16,0x32
@@ -225,13 +225,13 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
   ldi r16,0x31
   sts yearTenth,r16
 
-  ldi r16,0x39
+  ldi r16,0x32
   sts yearUnit,r16
 
 	ldi r16,12
 	sts year, r16
 
-	ldi r16,2
+	ldi r16,12
 	sts month, r16
 
 
@@ -513,6 +513,7 @@ update_dayF:
 	ldi r16,0x31
 	ldi r17,0x30
 	inc r18
+	sts month,r18
 	call update_monthF
 	rjmp return_day
 
@@ -522,7 +523,6 @@ update_dayF:
 
 	sts dayUnit,r16
 	sts dayTenth, r17
-	sts month,r18
 	pop r20
 	pop r19
 	pop r18
@@ -561,7 +561,7 @@ update_monthF:
 
 	update_year:
 	call update_yearF
-	ldi r18,0x31
+	ldi r18,1
 	ldi r16,0x31
 	ldi r17,0x30
 
@@ -579,16 +579,21 @@ update_monthF:
 update_yearF:
 	push r16
 	push r17
+	push r18
+
 	lds r16,yearUnit
 	lds r17,yearTenth
+	lds r18,year
 
 	cpi r16,0x39
 	breq update_yearTenth
 	inc r16
+	inc r18
 	rjmp return_done
 
 	update_yearTenth:
 	ldi r16,0x30
+	inc r18
 	cpi r17,0x39
 	breq done
 	inc r17
@@ -600,7 +605,9 @@ update_yearF:
 	return_done:
 	sts yearUnit,r16
 	sts yearTenth, r17
+	sts year,r18
 
+	pop r18
 	pop r17
 	pop r16
 	ret
@@ -627,8 +634,8 @@ t1_int_in_3Sec:
 	sts	TCCR1B,r16	; temporarily stop the clock
 	ldi	r16,0b00000000	; port A normal, port B normal, WGM=0000 (Normal)
 	sts	TCCR1A,r16
-	ldi	r17,HIGH(5625)	; set counter to 46875
-	ldi	r16,LOW(5625)
+	ldi	r17,HIGH(3625)	; set counter to 46875
+	ldi	r16,LOW(3625)
 	sts	OCR1AH,r17
 	sts	OCR1AL,r16
 	clr	r16		; clear current count
