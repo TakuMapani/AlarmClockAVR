@@ -30,7 +30,7 @@
 
   newLine: .byte 1
 
-  AlarmOn: .byte 2
+  AlarmCharacters: .byte 2
   spaceAlarm: .byte 1
 
   dayTenth: .byte 1
@@ -46,7 +46,7 @@
 
 	;Alarm State and its representation
 	AlarmState: .byte 1
-
+	alarmHour: .byte 1
 	AlarmHourTenth: .byte 1
 	AlarmHourUnit: .byte 1
 
@@ -166,10 +166,6 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
 ;*******************************************************************************
 ;LED out
 
-	ldi r16,0b00111111
-	out	DDRB,r16		; set port B bit 1 to output and low
-	clr r16
-	out	PORTB,r16
 ;*****************************************************************************
 ;DSEG initilization
 	;ldi r20,0b00000011;teminal count
@@ -186,8 +182,8 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
   ldi r16,0x4D
   st y+,r16
 
-  ldi YL,LOW(AlarmOn)
-  ldi YH,HIGH(AlarmOn)
+  ldi YL,LOW(AlarmCharacters)
+  ldi YH,HIGH(AlarmCharacters)
   ldi r16,0x41
   st Y+,r16
   ldi r16,0x6c
@@ -197,7 +193,7 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
   sts setSpace,r16
   sts spaceAlarm,r16
 
-  ldi r16,0x30
+  ldi r16,0x32
   sts mTenth,r16
   sts mUnit,r16
 
@@ -250,8 +246,18 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
 	ldi r16,0
 	sts hourMode,r16
 
-	ldi r16,20
+	ldi r16,15
 	sts hour,r16
+
+	ldi r16,1
+	sts AlarmState,r16
+
+	ldi r16,16
+	sts alarmHour,r16
+
+	ldi r16,0x33
+	sts AlarmHourTenth,r16
+	sts AlarmHourUnit,r16
 
 
 	;setup display data variables
@@ -277,14 +283,26 @@ main_loop:
 
   updating:
 	call Mode12_24
-  call update_minuteF
-	/* lds r16,AlarmState
+  call update_time
+	lds r16,AlarmState
 	cpi r16,1
 	brne check_alarm
 	rjmp display_update
 
 	check_alarm:
+	cpi r16,2
+	call Alarm_activeF
 	call check_alarmF
+
+	Alarm_activeF:
+		sbic PORTD,2
+		rjmp buzzerON
+		cbi PORTD,2
+		rjmp return_alarmActive
+		buzzerON: sbi PORTD,2
+		return_alarmActive:
+		ret
+
 
 	check_alarmF:
 		push r16
@@ -292,10 +310,53 @@ main_loop:
 		push r18
 		push r19
 
-		lds r16,hTenth
-		lds r17,hUnit
-		lds r18,AlarmHourTenth
-		lds r19,AlarmHourUnit */
+		lds r16,hour
+		lds r17,alarmHour
+
+
+		cp r16,r17
+		breq check_alarm_minutes
+		rjmp return_alarm_check
+
+		check_alarm_minutes:
+		call check_alarm_minutesF
+
+		return_alarm_check:
+		pop r19
+		pop r18
+		pop r17
+		pop r16
+		ret
+
+		check_alarm_minutesF:
+			push r16
+			push r17
+			push r18
+			push r19
+			push r20
+
+			lds r16,mTenth
+			lds r17,mUnit
+			lds r18,AlarmMinTenth
+			lds r19,AlarmHourTenth
+
+			cp r16,r18
+			brne return_alarm_check_minutes
+
+			check_alarm_minUnits:
+			cp r17,r19
+			brne return_alarm_check_minutes
+			ldi r20,2
+			sts AlarmState,r20
+
+			return_alarm_check_minutes:
+			pop r20
+			pop r19
+			pop r18
+			pop r17
+			pop r16
+			ret
+
 
 
 
@@ -312,8 +373,8 @@ main_loop:
   lds   r25,newLine
   call  LCD_Position
 
-  ldi		ZL,LOW(AlarmOn)
-	ldi		ZH,HIGH(AlarmOn)
+  ldi		ZL,LOW(AlarmCharacters)
+	ldi		ZH,HIGH(AlarmCharacters)
 	ldi		r25,11
   call LCD_Text
 
