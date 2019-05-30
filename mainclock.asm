@@ -1,14 +1,52 @@
 ;
-; Briefing_Timers_Period.asm
+;Alarm_Clock
 ;
-; Created: 4/04/2018 12:33:00 PM
-; Author : mq20162718
+; Created: XX/03/2019 12:33:00 PM
+; Author : TakuMapani
 ;
 .DSEG
 	.org 0x0500
 	secCount: .byte 1
 	secCountDis: .byte 1
 	setDis: .byte 2
+	;daylight savings state
+	;1 - 1 October to 1 April
+	;0 - daylight off
+	dayLightSavingsState: .byte 1
+	daylightTimeState: .byte 1 ;1 check october 0 - check april
+	AMPM_mode: .byte 1
+	hourMode: .byte 1
+	button_1224: .byte 1
+	;display state
+	;1 - it shows the current time and the day
+	;2 - it shows time allows to increment date
+	;3 - it shows the date allows to increment date
+	displayState: .byte 1
+
+	;Alarm values
+	;state 0-off 1-On 2-ringing
+	AlarmState: .byte 1
+	AlarmMinutes: .byte 1
+	AlarmHours: .byte 1
+	AlarmHourTenth: .byte 1
+	AlarmHourUnit: .byte 1
+
+	AlarmMinTenth: .byte 1
+	AlarmMinUnit: .byte 11
+
+	buzzerNote: .byte 1
+
+
+	;Modulus values
+	mod10Value: .byte 1 ;This stores the scratch value to be used in Modulus
+	modTenth: .byte 1
+	modUnit: .byte 1
+
+	;binary values for clock
+	second: .byte 1
+	minute: .byte 1
+	hour: .byte 1
+	day: .byte 1
 	month: .byte 1
 	year: .byte 1
 
@@ -23,10 +61,13 @@
   setMSemi: .byte 1 ;0x3a
   sTenth: .byte 1
   sUnit: .byte 1
+	sSpace:.byte 1
+	daylightSign: .byte 1
 
+;second line display normal
   newLine: .byte 1
 
-  AlarmOn: .byte 2
+  AlarmCharacters: .byte 2
   spaceAlarm: .byte 1
 
   dayTenth: .byte 1
@@ -39,6 +80,7 @@
 
   yearTenth: .byte 1
   yearUnit: .byte 1
+
 
 
 ; Demonstration of the Timer Usage and Periodic interrupt capabilities of the ATmega328
@@ -76,7 +118,7 @@
 ;
 ; non configured interrupts - do nothing
 ;
-;INT0_IR: rjmp  noint		; we use interrupt 0
+INT0_IR: rjmp  noint		; we use interrupt 0
 INT1_IR: rjmp  noint
 PCINT0_IR: rjmp  noint
 PCINT1_IR: rjmp  noint
@@ -137,564 +179,1129 @@ RESET:	ldi	r16,high(RAMEND) ; Set Stack Pointer to top of RAM
 ;******************************************************************************
 ;USART (Serial) setup
 
-	sbi	PORTD,1		; set TxD to an RS232 idle value
-	sbi	DDRD,1		; and make it output
-	clr	r16
-	sts	UCSR0A,r16
-	ldi	r16,0x18	; enable receiver and transmitter
-	sts	UCSR0B,r16
-	ldi	r16,0x06	; async, no parity, 1 stop, 8 bits
-	sts	UCSR0C,r16
-	clr	r16
-	sts	UBRR0H,r16
-	ldi	r16,0x67	; baud rate divisor 103 (16M/9600 - 1)
-	sts	UBRR0L,r16
-	clr	r16
+				sbi	PORTD,1		; set TxD to an RS232 idle value
+				sbi	DDRD,1		; and make it output
+				clr	r16
+				sts	UCSR0A,r16
+				ldi	r16,0x18	; enable receiver and transmitter
+				sts	UCSR0B,r16
+				ldi	r16,0x06	; async, no parity, 1 stop, 8 bits
+				sts	UCSR0C,r16
+				clr	r16
+				sts	UBRR0H,r16
+				ldi	r16,0x67	; baud rate divisor 103 (16M/9600 - 1)
+				sts	UBRR0L,r16
+				clr	r16
 ;*******************************************************************************
-;LED out
+;Button
+				cbi DDRD,2 ;Change 12/24hour mode
+				sbi PORTD,2
 
-	ldi r16,0b00111111
-	out	DDRB,r16		; set port B bit 1 to output and low
-	clr r16
-	out	PORTB,r16
-;*****************************************************************************
+				cbi DDRD,7 ;turn alarm on and off
+				sbi PORTD,7
+
+				sbi DDRD,3
+				cbi PORTD,3
+
+
+;*******************************************************************************
+;SPI setup
+ldi	r16,0b00101100		; set pin directions
+out	DDRB,r16
+sbi	PORTB,2			; and SS back high
+				ldi	r16,(1<<SPE)|(1<<MSTR); set master SPI, (SPI mode 0 operation is 00)
+				out	SPCR,r16			; SCK is set fosc/4 => 4MHz
+				clr	r16				; clear interrupt flags and oscillator mode.
+				out	SPSR,r16
+;led output for alarm
+				ldi r20,0
+				ldi r21,0
+				call SPI_Send_Command
+;setup button on pin0 PORTB
+				ldi r20,0x01
+				ldi r21,0xff
+				call SPI_send_command
+;configure pullup resistor PORTB pin0
+				ldi r20,0x0d
+				ldi r21,0xff
+				call SPI_Send_Command
+
 ;DSEG initilization
-	;ldi r20,0b00000011;teminal count
-	clr r16
-	sts secCount,r16
+	DSEG_init:
+				ldi r16,0x40
+				sts newLine,r16
 
-  ldi r16,0x40
-  sts newLine,r16
+				ldi r16,0x20
+				sts setSpace,r16
+				sts spaceAlarm,r16
+				sts sSpace,r16
+				sts daylightSign,r16
 
-  ldi yl,low(setAM_PM)
-  ldi yh,HiGH(setAM_PM)
-  ldi r16,0x41
-  st y+,r16
-  ldi r16,0x4D
-  st y+,r16
+				ldi r16,0x3A
+				sts setHSemi,r16
+				sts setMSemi,r16
 
-  ldi YL,LOW(AlarmOn)
-  ldi YH,HIGH(AlarmOn)
-  ldi r16,0x41
-  st Y+,r16
-  ldi r16,0x6c
-  st Y+,r16
-
-  ldi r16,0x20
-  sts setSpace,r16
-  sts spaceAlarm,r16
-
-  ldi r16,0x30
-  sts mTenth,r16
-  sts mUnit,r16
-
-  ldi r16,0x3A
-  sts setHSemi,r16
-  sts setMSemi,r16
-
-  ldi r16,0x20
-  sts hTenth,r16
-  ldi r16,0x31
-  sts hUnit,r16
+				ldi r16,0x2F
+				sts slashYear, r16
+				sts slashMonth,r16
+;initial time
+				ldi r16,20
+				sts second,r16
+				sts hour,r16
+				ldi r16,18
+				sts minute,r16
 
 
+				ldi r16,1
+				sts hourMode,r16
 
-  ldi r16,0x30
-  sts sTenth,r16
-  sts sUnit,r16
+;initial date
+				ldi r16,15
+				sts day,r16
 
-	ldi r16,0x30
-	sts secCountDis,r16
+				ldi r16,1
+				sts month, r16
 
-  ldi r16,0x2F
-  sts slashYear, r16
-  sts slashMonth,r16
+				ldi r16,12
+				sts year, r16
 
-  ldi r16,0x32
-  sts dayTenth,r16
+;alarm initilization
+				ldi r16,1
+				sts AlarmState,r16
+				ldi r16,20
+				sts AlarmMinutes,r16
+				sts AlarmHours,r16
 
-  ldi r16,0x32
-  sts dayUnit,r16
+;setup display data variables
+				ldi yl,low(setdis)
+				ldi yh,high(setdis)
+				ldi r16,0x0c ;
+				st y+,r16
+				ldi r16,0x01 ;clear display
+				st y+,r16
 
-  ldi r16,0x30
-  sts monthTenth,r16
-
-  ldi r16,0x32
-  sts monthUnit,r16
-
-  ldi r16,0x31
-  sts yearTenth,r16
-
-  ldi r16,0x39
-  sts yearUnit,r16
-
-	ldi r16,12
-	sts year, r16
-
-	ldi r16,2
-	sts month, r16
-
-
-	;setup display data variables
-	ldi yl,low(setdis)
-	ldi yh,high(setdis)
-	ldi r16,0x0c ;
-	st y+,r16
-	ldi r16,0x01 ;clear display
-	st y+,r16
-
-	call	t1_int_in_3Sec	; configure for an interrupt in 3 seconds
-	sei			; enable interrupts globally
+				call	t1_int_in_1Sec	; configure for an interrupt in 3 seconds
+				sei			; enable interrupts globally
+				call initialise_time
+				call display_update
 
 ;*************************************MAIN**************************************
 ; The main loop is just a sleep instruction
 ;
 main_loop:
-	cpi r20,2
-	breq updating
-	rjmp	main_loop
+				sleep
+				rjmp	main_loop
 
-  updating:
-  call update_dayF
+	updating:
+				lds r18,button_1224
+				tst r18
+				breq no_change
+				call Mode12_24
+				clr r18
+				sts button_1224,r18
+	no_change:
+				call update_second
+				call check_daylight_savings
+				call Check_Alarm
+				rjmp display_update
 
 	display_update:
-	ldi		r24,0x27
-	;call	LCD_Setup
-	;call	LCD_Clear
-	ldi		r25,0x00
-	call	LCD_Position
-	ldi		ZL,LOW(setAM_PM)
-	ldi		ZH,HIGH(setAM_PM)
-	ldi		r25,11
-	call	LCD_Text
-  lds   r25,newLine
-  call  LCD_Position
+				ldi		r24,0x27
+				ldi		r25,0x00
+				call	LCD_Position
+				ldi		ZL,LOW(setAM_PM)
+				ldi		ZH,HIGH(setAM_PM)
+				ldi		r25,11
+				call	LCD_Text
+				lds   r25,newLine
+				call  LCD_Position
 
-  ldi		ZL,LOW(AlarmOn)
-	ldi		ZH,HIGH(AlarmOn)
-	ldi		r25,11
-  call LCD_Text
+				ldi		ZL,LOW(AlarmCharacters)
+				ldi		ZH,HIGH(AlarmCharacters)
+				ldi		r25,11
+				call LCD_Text
 
-	clr		r20
-	rjmp	main_loop	; after interrupt do it again
+				clr		r20
+				ret
 
-  update_time:
-	  push r16
-	  push r17
-	  lds r16,sUnit
-	  lds r17,sTenth
+update_second:
+				push r16
+				push r17
+				push r18
 
-	  cpi r16,0x39
-	  breq update_sTenth
-	  inc r16
-	  rjmp return_s
+				lds r16,sUnit
+				lds r17,sTenth
+				lds r18,second
 
-	  update_sTenth:
-	  ldi r16,0x31
-	  cpi r17,0x35
-	  breq update_minute
-	  inc r17
-	  rjmp return_s
+				cpi r18,59
+				breq update_minute
+				inc r18
+				rjmp return_s
+	update_minute:
+				clr r18
+				call update_minuteF
 
-	  update_minute:
-	  call update_minuteF
-	  ldi r17,0x30
 
-	  return_s:
-	  sts sUnit,r16
-	  sts sTenth, r17
+  return_s:
+				sts second,r18
+				sts mod10Value,r18
+				call mod10F
+				lds r16,modUnit
+				lds r17,modTenth
+				sts sUnit,r16
+				sts sTenth, r17
 
-	  pop r17
-	  pop r16
-	  ret
+				pop r18
+				pop r17
+				pop r16
+				ret
 ;***************************update_minute***************************************
-  update_minuteF:
-	  push r16
-	  push r17
-	  lds r16,mUnit
-	  lds r17,mTenth
+update_minuteF:
+				push r16
+				push r17
+				push r18
+				push r19
 
-	  cpi r16,0x39
-	  breq update_mTenth
-	  inc r16
-	  rjmp return_m
+				lds r19,AlarmState
+				lds r18,minute
+				lds r16,mUnit
+				lds r17,mTenth
 
-	  update_mTenth:
-	  ldi r16,0x31
-	  cpi r17,0x35
-	  breq update_hour
-	  inc r17
-	  rjmp return_m
+				cpi r18,59
+				breq update_hour
+				inc r18
+				rjmp return_m
 
-	  update_hour:
-	  call update_hourF
-	  ldi r17,0x30
+		update_hour:
+				call update_hourF
+				clr r18
 
-	  return_m:
-	  sts mUnit,r16
-	  sts mTenth, r17
+		return_m:
+		;check if alarm is ringing and turn it off after minute increment
+				cpi r19,2
+				brne cont_return
+				ldi r19,1
+				sts AlarmState,r19
+		cont_return:
+				sts minute, r18
+				sts mod10Value,r18
+				call mod10F
 
-	  pop r17
-	  pop r16
-	  ret
+				lds r16,modUnit
+				lds r17,modTenth
+				sts mUnit,r16
+				sts mTenth, r17
+
+				pop r19
+				pop r18
+				pop r17
+				pop r16
+				ret
 
 ;*******************************update_hourF************************************
-  update_hourF:
-	  push r16
-	  push r17
-	  push r18
-	  ldi YL,LOW(setAM_PM)
-	  ldi YH,HIGH(setAM_PM)
-	  ld r18,Y+
+update_hourF:
+				push r16
+				push r17
+				push r18
+				push r19
+				push r20 ;AMPM state
+				push r21 ;scratch for now for hours
 
-	  lds r16,hUnit
-	  lds r17,hTenth
 
-	  cpi r17,0x31
-	  breq special_update
-	  cpi r16,0x39
-	  breq update_hTenth
-	  inc r16
-	  rjmp return_h
+				lds r16,hUnit
+				lds r17,hTenth
+				lds r18,hour
+				lds r19,hourMode
 
-	  update_hTenth:
-	  ldi r16,0x30
-	  ;cpi r17,0x31
-	  ;breq update_hour
-	  ldi r17,0x31
-	  rjmp return_h
+				;increment hours upto 23 and clear to 0
+				cpi r18,23
+				breq clr_hour
+				inc r18
+				rjmp cont_hour
+	clr_hour:
+				call update_dayF
+				clr r18
+				;We dont need to set AM PM characters everyTime
+				;but for now we have to do it sigh :(
 
-	  ;update_hour:
-	;  call update_hourF
-	  ;ldi r17,0x30
+	cont_hour:
+				tst r19
+				breq Hour_24
 
-	 special_update:
-	  cpi r16,0x32
-	  breq update_hTenth1
-	  inc r16
-	  cpi r16,0x32
-	  breq change_AM_PM
-	  rjmp return_h
+				cpi r18,12
+				brlo AM_time
 
-	  change_AM_PM:
-	    cpi r18,0x41
-	    breq updating_AM_PM
-	    ldi r18,0x41 ; change from PM to AM new day
-	    call update_dayF
-	    rjmp return_h
-	    updating_AM_PM: ;change from AM to PM
-	    ldi r18,0x50
-	    rjmp return_h
+	PM_time:
+				ldi r20,1
+				mov r21,r18 ;use scratch for subtraction
+				subi r21,12
+				tst r21 ;checking to see if its 12PM
+				breq time_12
+				sts mod10Value,r21
+				;call mod10F ;getting Tens and units
+				rjmp return_h
 
-	  update_hTenth1:
-	  ldi r16,0x31
-	  ldi r17,0x20
-	  rjmp return_h
+	AM_time:
+				ldi r20,0
 
-	  return_h:
-	  ldi YL,LOW(setAM_PM)
-	  ldi YH,HIGH(setAM_PM)
-	  st Y+,r18
+				tst r18
+				breq time_12
+				sts mod10Value,r18
+				rjmp return_h
 
-	  sts hUnit,r16
-	  sts hTenth, r17
+	time_12:
+				ldi r21,12
+				sts mod10Value,r21
+				rjmp return_h
 
-	  pop r18
-	  pop r17
-	  pop r16
-	  ret
+
+
+	Hour_24:
+				ldi r20,2
+				sts mod10Value,r18
+
+	return_h:
+				;setAMPM_mode
+				sts AMPM_mode,r20
+				call setAMPM_mode
+
+				;get the tens and units using mod10/reminder10
+				call mod10F
+				lds r16,modUnit
+				lds r17,modTenth
+
+				cpi r17,0x30
+				breq insert_space
+				sts hTenth,r17
+				breq continue_hour
+	insert_space:
+				ldi r17,0x20
+				sts hTenth,r17
+	continue_hour:
+				sts hUnit, r16
+				sts hour,r18
+
+				pop r21
+				pop r20
+				pop r19
+				pop r18
+				pop r17
+				pop r16
+				ret
 
 ;**************************update_dayF***************************************
 update_dayF:
-	push r16
-	push r17
-	push r18
-	push r19
-	push r20
+				push r16
+				push r17
+				push r18
+				push r19
+				push r20
+				push r21
 
-	lds r16,dayUnit
-	lds r17, dayTenth
-	lds r18, month
-	mov r19,r18 ; make a copy of month to use for Modulus
-	lds r20,year
+				lds r16,dayUnit
+				lds r17, dayTenth
+				lds r18, month
+				mov r19,r18 ; make a copy of month to use for Modulus
+				lds r20,year
+				lds r21,day
 
-	cpi r18,8
-	brlo before_august
+				cpi r18,8
+				brlo before_august
 
-	after_august:
-	andi r19,0x01
-	cpi r19,0
-	brne second_half_30_days
+after_august:
+				andi r19,0x01
+				cpi r19,0
+				brne second_half_30_days
 
 	second_half_31_days:
-		cpi r17,0x33
-		breq last_2_days
-		cpi r16,0x39
-		breq inc_dayTenth
-		inc r16
-		rjmp return_day
+				cpi r21,31
+				breq reset_day
+				inc r21
+				rjmp return_day
 
 	second_half_30_days:
-		cpi r17,0x33
-		breq reset_month
+				cpi r21,30
+				breq reset_day
+				inc r21
+				rjmp return_day
 
-		cpi r16,0x39
-		breq inc_dayTenth
-		inc r16
-		rjmp return_day
-
-	before_august:
-	andi r19,0x01
-	cpi r19,0
-	brne first_half_31days
+before_august:
+				andi r19,0x01
+				cpi r19,0
+				brne first_half_31days
 
 	first_half_not_31days:
-		cpi r18,2
-		breq february_update
+				cpi r18,2
+				breq february_update
 
-		cpi r17,0x33 ;check to see if its the 30th and reset date
-		breq reset_month
+				cpi r21,30
+				breq reset_day
+				inc r21
 
-		cpi r16,0x39
-		breq inc_dayTenth
-		inc r16
-		rjmp return_day
+				/* cpi r17,0x33 ;check to see if its the 30th and reset date
+				breq reset_day
+				cpi r16,0x39
+				breq inc_dayTenth */
+				inc r16
+				rjmp return_day
 
-		february_update:
-			cpi r17,0x32
-			breq leap_year_maybe
+	february_update:
+				cpi r21,20
+				brlt february_before_20
 
-			cpi r16,0x39
-			breq inc_dayTenth
-			inc r16
-			rjmp return_day
-
-			leap_year_maybe:
+		leap_year_maybe:
 				andi r20,0x03
 				cpi r20,0
 				breq leap_year
-				cpi r16,0x38
-				breq reset_month
-				inc r16
+				cpi r21,28
+				breq reset_day
+				inc r21
 				rjmp return_day
 
-				leap_year:
-				cpi r16,0x39
-				breq reset_month
-				inc r16
+		leap_year:
+				cpi r21,29
+				breq reset_day
+				inc r21
 				rjmp return_day
+
+
+		february_before_20:
+				inc r21
+				rjmp return_day
+
 
 
 	first_half_31days:
-		cpi r17,0x33
-		breq last_2_days
-		cpi r16,0x39
-		breq inc_dayTenth
-		inc r16
-		rjmp return_day
+				cpi r21,31
+				breq reset_day
+				inc r21
+				rjmp return_day
 
-	inc_dayTenth:
-		ldi r16,0x30
-		cpi r17,0x33
-		breq last_2_days
-		inc r17
-		rjmp return_day
+reset_day:
+				ldi r21,1
+				sts month,r18
+				call update_monthF
+				;rjmp return_day
 
 
 
-		last_2_days:
-		cpi r16,0x31
-		breq reset_month
-		inc r16
-		rjmp return_day
+return_day:
+				;obtaining the tens and units for days using MOD10 function
+				sts mod10Value,r21
+				call mod10F
+				lds r16,modUnit
+				lds r17,modTenth
+				sts dayUnit,r16
+				sts dayTenth, r17
+				sts day,r21
 
-
-	reset_month:
-	ldi r16,0x31
-	ldi r17,0x30
-	inc r18
-	call update_monthF
-	rjmp return_day
-
-
-
-	return_day:
-
-	sts dayUnit,r16
-	sts dayTenth, r17
-	sts month,r18
-	pop r20
-	pop r19
-	pop r18
-	pop r17
-	pop r16
-	ret
+				pop r21
+				pop r20
+				pop r19
+				pop r18
+				pop r17
+				pop r16
+				ret
 
 ;****************************************update_monthF**************************
 update_monthF:
-	push r16
-	push r17
-	push r18
+				push r16
+				push r17
+				push r18
 
 
-	lds r16,monthUnit
-	lds r17,monthTenth
-	lds r18,month
+				lds r16,monthUnit
+				lds r17,monthTenth
+				lds r18,month
 
-	cpi r17,0x31
-	breq update_last_2
-	cpi r16,0x39
-	breq update_monthTenth
-	inc r16
-	rjmp return_month
+				cpi r18,12
+				breq reset_month
+				inc r18
+				rjmp return_month
 
-	update_monthTenth:
-	ldi r16,0x30
-	inc r17
-	rjmp return_month
-
-	update_last_2:
-	cpi r16,0x32
-	breq update_year
-	inc r16
-	rjmp return_month
-
-	update_year:
-	call update_yearF
-	ldi r18,0x31
-	ldi r16,0x31
-	ldi r17,0x30
+	reset_month:
+				call update_yearF
+				ldi r18,1
 
 	return_month:
-	sts monthUnit,r16
-	sts monthTenth, r17
-	sts month,r18
+				sts mod10Value,r18
+				call mod10F
+				lds r16,modUnit
+				lds r17,modTenth
+				sts monthUnit,r16
+				sts monthTenth, r17
+				sts month,r18
 
-	pop r18
-	pop r17
-	pop r16
-	ret
+				pop r18
+				pop r17
+				pop r16
+				ret
 
 ;****************************update_yearF***************************************
 update_yearF:
-	push r16
-	push r17
-	lds r16,yearUnit
-	lds r17,yearTenth
+				push r16
+				push r17
+				push r18
 
-	cpi r16,0x39
-	breq update_yearTenth
-	inc r16
-	rjmp return_done
+				lds r16,yearUnit
+				lds r17,yearTenth
+				lds r18,year
 
-	update_yearTenth:
-	ldi r16,0x30
-	cpi r17,0x39
-	breq done
-	inc r17
-	rjmp return_done
+				cpi r16,0x39
+				breq done
+				inc r18
+				rjmp return_done
+
 
 	done:
-	ldi r17,0x30
+				ldi r18,0
 
 	return_done:
-	sts yearUnit,r16
-	sts yearTenth, r17
+				sts		mod10Value,r18
+				call 	mod10F
+				lds		r16,modUnit
+				lds		r17,modTenth
+				sts 	yearUnit,r16
+				sts 	yearTenth, r17
+				sts 	year,r18
 
-	pop r17
-	pop r16
-	ret
-; Enable an interrupt in 3 seconds using timer 1.
+				pop r18
+				pop r17
+				pop r16
+				ret
+
+;*****************************Mode12_24*****************************************
+Mode12_24:
+				push r16
+				push r17
+				push r18
+				push r19
+				push r20 ;AMPM state
+				push r21 ;scratch for now for hours
+
+
+				lds r16,hUnit
+				lds r17,hTenth
+				lds r18,hour
+				lds r19,hourMode
+
+
+				;We dont need to set AM PM characters everyTime
+				;but for now we have to do it sigh :(
+
+				tst r19
+				breq Hour_24Mode
+
+				cpi r18,12
+				brlo AM_timeMode
+
+	PM_timeMode:
+				ldi r20,1
+				mov r21,r18
+				subi r21,12
+				tst r21 ;checking to see if its 12PM
+				breq time_12Mode
+				sts mod10Value,r21
+				;call mod10F ;getting Tens and units
+				rjmp return_Mode1224
+
+	AM_timeMode:
+				ldi r20,0
+
+				tst r18
+				breq time_12Mode
+				sts mod10Value,r18
+				rjmp return_Mode1224
+
+	time_12Mode:
+				ldi r21,12
+				sts mod10Value,r21
+				rjmp return_Mode1224
+
+
+
+	Hour_24Mode:
+				ldi r20,2
+				sts mod10Value,r18
+
+	return_Mode1224:
+				;setAMPM_mode
+				sts AMPM_mode,r20
+				call setAMPM_mode
+
+				;get the tens and units using mod10/reminder10
+				call mod10F
+				lds r16,modUnit
+				lds r17,modTenth
+
+				cpi r17,0x30
+				breq insert_space_Mode1224
+				sts hTenth,r17
+				rjmp continue_mode12_24
+	insert_space_Mode1224:
+				ldi r17,0x20
+				sts hTenth,r17
+	continue_mode12_24:
+				sts hUnit, r16
+
+				pop r21
+				pop r20
+				pop r19
+				pop r18
+				pop r17
+				pop r16
+				ret
+;********************Funtction AM PM mode***************************************
+setAMPM_mode:
+				push r16
+				push r17
+				push r18
+				lds r16,AMPM_mode
+				ldi r18,0x4D
+
+				cpi r16,1
+				breq setModePM
+				cpi r16,0
+				breq setModeAM
+
+				ldi r17,0x20
+				ldi r18,0x20
+				rjmp return_modeAMPM
+
+	setModePM:
+				ldi r17,0x50
+				rjmp return_modeAMPM
+
+	setModeAM:
+				ldi r17,0x41
+
+	return_modeAMPM:
+				ldi YL,LOW(setAM_PM)
+				ldi YH,HIGH(setAM_PM)
+				st Y+,r17
+				st Y+,r18
+
+				pop r18
+				pop r17
+				pop r16
+				ret
+
+	;**********************************Mod10*************************************
+	mod10F:
+				push r16
+				push r17
+				push r18
+
+				lds r16,mod10Value
+				ldi r17,0x30 ; Tens
+				ldi r18,0x30 ;Units
+
+	mod10:
+				cpi r16,10
+				brlt contMod
+				subi r16,10
+				inc r17
+				rjmp mod10
+	contMod:
+				add r18,r16
+				sts modTenth,r17
+				sts modUnit,r18
+
+				pop r18
+				pop r17
+				pop r16
+				ret
+;************************Check_Alarm********************************************
+Check_Alarm:
+				push r16
+				push r17
+				push r18
+				push r19
+				push r20
+				push r21
+				push r22
+				push r23
+				push r24
+
+				lds r16,AlarmState
+				;hours and minutes
+				lds r19,hour
+				lds r20,minute
+				;Alarm hours and minutes
+				lds r21,AlarmHours
+				lds r22,AlarmMinutes
+				lds r23,buzzerNote ;state for buzzerNote played
+
+				call turn_on_off_spi_led
+				tst r16
+				breq Alarm_off_state
+				ldi r17,0x41
+				ldi r18,0x6C
+				cpi r16,2
+				breq alarm_ringing
+				clr r24
+				sts TCCR2B,r24
+				cbi PORTB,0 ;clear bit for showing alarm on
+				cp r19,r21
+				breq cp_minutes
+				rjmp return_check_alarm
+cp_minutes:
+				cp r20,r22
+				breq cp_minYes
+				rjmp return_check_alarm
+cp_minYes:
+				ldi r16,2
+				sts AlarmState,r16
+				rjmp return_check_alarm
+
+alarm_ringing:
+				;buzzer will alternate between 2 frequencies
+				call Buzzer
+				call check_external_button
+
+				tst r23
+				breq otherNote
+				sbi PORTB,0
+				clr r23
+
+				rjmp return_check_alarm
+	otherNote:
+				cbi PORTB,0
+				inc r23
+				rjmp return_check_alarm
+Alarm_off_state:
+				clr r24
+				sts TCCR2B,r24
+				ldi r17,0x20
+				ldi r18,0x20
+return_check_alarm:
+				ldi YL,LOW(AlarmCharacters)
+				ldi YH,HiGH(AlarmCharacters)
+				st	Y+,r17
+				st	Y,r18
+				sts buzzerNote,R23
+
+				pop r24
+				pop r23
+				pop r22
+				pop r21
+				pop r20
+				pop r19
+				pop r18
+				pop r17
+				pop r16
+				ret
+Buzzer:
+				push r16
+				push r17
+				push r18
+
+				ldi r17,0b00010010
+				sts TCCR2A,r17
+				ldi r17,0b00000100
+				sts TCCR2B,r17
+
+				lds r16,buzzerNote
+				tst r16
+				breq buzzerOtherNote
+				ldi r17,0x20
+				sts OCR2A,r17
+				rjmp return_buzzer
+
+buzzerOtherNote:
+				ldi r17,0x4e
+				sts OCR2A,r17
+
+return_buzzer:
+				pop r18
+				pop r17
+				pop r16
+				ret
+
+;SPI check button
+check_external_button:
+			push r16
+			push r17
+			push r18
+			push r20
+			push r21
+
+			ldi r17,0xff
+			ldi r20,0x13
+poll_SPI_button:
+			call SPI_Read_Command
+			andi r16,0x01
+			rjmp return_check_external_button
+			dec r17
+			brne poll_SPI_button
+			ldi r18,0x00 ;turn off ringing alarm
+return_check_external_button:
+			sts AlarmState,r18
+			pop r21
+			pop r20
+			pop r18
+			pop r17
+			pop r16
+			ret
+
+turn_on_off_spi_led:
+			push r16
+			push r18
+			push r20
+			push r21
+
+			ldi r20,0x14
+			lds r18,AlarmState
+			cpi r18,0x02
+			breq turn_on_LED
+			ldi r21,0x00
+			call SPI_send_command
+			rjmp return_turn_on_off_spi_led
+turn_on_LED:
+			ldi r21,0x01
+			call SPI_Send_Command
+
+return_turn_on_off_spi_led:
+			pop r21
+			pop r20
+			pop r18
+			pop r16
+			ret
+
+
+;******************************check_daylight_savings***************************
+check_daylight_savings:
+				push r16
+				push r17
+				push r18
+				push r19
+
+				lds r16,dayLightSavingsState
+				lds r17,month
+				lds r18,day
+				tst r16
+				breq test_turn_on_DayLight
+				;check april date
+				cpi r17,4
+				breq check_Apr_date
+				rjmp return_check_daylight
+		check_Apr_date:
+				cpi r18,1
+				breq check_time
+				rjmp return_check_daylight
+
+		test_turn_on_DayLight:
+				;check october date
+				cpi r17,10
+				breq check_Oct_date
+				rjmp return_check_daylight
+		check_Oct_date:
+				cpi r18,1
+				breq check_time
+				rjmp return_check_daylight
+		check_time:
+				call check_daylight_time
+
+return_check_daylight:
+				pop r19
+				pop r18
+				pop r17
+				pop r16
+				ret
+
+check_daylight_time:
+				push r16
+				push r17
+				push r18
+				push r19
+
+				lds r16,second
+				lds r17,minute
+				lds r18,hour
+				lds r19,dayLightSavingsState
+
+				tst r19
+				breq check_oct
+				cpi r18,2
+				breq check_minute_Apr
+				rjmp return_check_daylight_time
+	check_minute_Apr:
+				cpi r17,59
+				breq check_sec_Apr
+				rjmp return_check_daylight_time
+	check_sec_Apr:
+				cpi r16,59
+				breq turn_off_daylight
+				rjmp return_check_daylight_time
+	turn_off_daylight:
+				ldi r17,0
+				ldi r16,0
+				ldi r19,0
+				rjmp return_check_daylight_time
+
+
+check_oct:
+				cpi r18,1
+				breq check_minute_Oct
+				cpi r18,2 ;if time is set to 2AM somehow
+				breq turn_on_daylight_special
+				rjmp return_check_daylight_time
+		check_minute_Oct:
+				cpi r17,59
+				breq check_sec_oct
+				rjmp return_check_daylight_time
+		check_sec_oct:
+				cpi r16,59
+				breq turn_on_daylight
+
+		turn_on_daylight:
+				ldi r18,3
+				ldi r17,0
+				ldi r16,0
+				ldi r19,1
+				rjmp return_check_daylight_time
+
+		turn_on_daylight_special:
+				ldi r18,3
+				inc r19
+				rjmp return_check_daylight_time
+
+	return_check_daylight_time:
+				sts dayLightSavingsState,r19
+				sts hour,r18
+				sts minute,r17
+				sts second,r16
+
+				pop r19
+				pop r18
+				pop r17
+				pop r16
+				ret
+
+
+;********************************init time**************************************
+initialise_time:
+				push r16
+				push r17
+				push r18
+
+				lds r16,second
+				sts mod10Value,r16
+				call mod10F
+				lds r17,modUnit
+				lds r18,modTenth
+				sts sUnit, r17
+				sts sTenth,r18
+				call initialise_minute
+
+				pop r18
+				pop	r17
+				pop r16
+				ret
+
+initialise_minute:
+			push r16
+			push r17
+			push r18
+
+			lds r16,minute
+			sts mod10Value,r16
+			call mod10F
+			lds r17,modUnit
+			lds r18,modTenth
+			sts mUnit, r17
+			sts mTenth,r18
+			call initialise_hour
+
+			pop r18
+			pop	r17
+			pop r16
+			ret
+
+initialise_hour:
+			push r16
+			push r17
+			push r18
+
+			lds r16,hour
+			sts mod10Value,r16
+			call mod10F
+			lds r17,modUnit
+			lds r18,modTenth
+			sts hUnit, r17
+			sts hTenth,r18
+			call Mode12_24
+			call initialise_day
+
+			pop r18
+			pop	r17
+			pop r16
+			ret
+
+initialise_day:
+			push r16
+			push r17
+			push r18
+
+			lds r16,day
+			sts mod10Value,r16
+			call mod10F
+			lds r17,modUnit
+			lds r18,modTenth
+			sts dayUnit, r17
+			sts dayTenth,r18
+			call initialise_month
+
+			pop r18
+			pop	r17
+			pop r16
+			ret
+
+initialise_month:
+			push r16
+			push r17
+			push r18
+
+			lds r16,month
+			sts mod10Value,r16
+			call mod10F
+			lds r17,modUnit
+			lds r18,modTenth
+			sts monthUnit, r17
+			sts monthTenth,r18
+			call initialise_year
+
+			pop r18
+			pop	r17
+			pop r16
+			ret
+
+initialise_year:
+			push r16
+			push r17
+			push r18
+
+			lds r16,year
+			sts mod10Value,r16
+			call mod10F
+			lds r17,modUnit
+			lds r18,modTenth
+			sts yearUnit, r17
+			sts yearTenth,r18
+
+
+			pop r18
+			pop	r17
+			pop r16
+			ret
+;*******************************************************************************
+
+
+; Enable an interrupt in 1 seconds using timer 1.
+
 ;
-; The counter will be running at 16,000,000 HZ / 1024
-; = 15625 ticks per second
-;
-; we wish to delay for 3 seconds:
-; = 15625 * 3
-; = 46875 count after 3 seconds
-; To calculate the tone frequency
-; num = 1,000,000 / frequency
-; for 'A' (440Hz)
-;	1000000/440 = 2273
-;
-t1_int_in_3Sec:
-	push	r16
-	push	r17
-	push	r18
-	lds	r18,TIMSK1	; save current value
-	clr	r16		; disables all interrupts from Timer 1
-	sts	TIMSK1,r16
-	sts	TCCR1B,r16	; temporarily stop the clock
-	ldi	r16,0b00000000	; port A normal, port B normal, WGM=0000 (Normal)
-	sts	TCCR1A,r16
-	ldi	r17,HIGH(5625)	; set counter to 46875
-	ldi	r16,LOW(5625)
-	sts	OCR1AH,r17
-	sts	OCR1AL,r16
-	clr	r16		; clear current count
-	sts	TCNT1H,r16
-	sts	TCNT1L,r16
-	ldi	r16,0b00001101	; noise = 0, WGM=0000, clk = /1024
-	sts	TCCR1B,r16
-	ldi	r16,0b00000000
-	sts	TCCR1C,r16
-	ori	r18,0b00000010	; interrupt enabled when OCB match (and other interrupts)
-	sts	TIMSK1,r18
-	pop	r18
-	pop	r17
-	pop	r16
-	ret
+t1_int_in_1Sec:
+			push	r16
+			push	r17
+			push	r18
+			lds	r18,TIMSK1	; save current value
+			clr	r16		; disables all interrupts from Timer 1
+			sts	TIMSK1,r16
+			sts	TCCR1B,r16	; temporarily stop the clock
+			ldi	r16,0b00000000	; port A normal, port B normal, WGM=0000 (Normal)
+			sts	TCCR1A,r16
+			ldi	r17,HIGH(3625)	; set counter to 46875
+			ldi	r16,LOW(3625)
+			sts	OCR1AH,r17
+			sts	OCR1AL,r16
+			clr	r16		; clear current count
+			sts	TCNT1H,r16
+			sts	TCNT1L,r16
+			ldi	r16,0b00001101	; noise = 0, WGM=0000, clk = /1024
+			sts	TCCR1B,r16
+			ldi	r16,0b00000000
+			sts	TCCR1C,r16
+			ori	r18,0b00000010	; interrupt enabled when OCB match (and other interrupts)
+			sts	TIMSK1,r18
+			pop	r18
+			pop	r17
+			pop	r16
+			ret
 ;
 ; Clear any pending interrupts from timer 1.
 ;
 t1_clear:
-	push	r16
-	clr	r16		; disables all interrupts from Timer 1
-	sts	TIMSK1,r16
-	sts	TCCR1B,r16	; temporarily stop the clock
-	pop	r16
-	ret
+			push	r16
+			clr	r16		; disables all interrupts from Timer 1
+			sts	TIMSK1,r16
+			sts	TCCR1B,r16	; temporarily stop the clock
+			pop	r16
+			ret
 ;
 ; Interrupt handling routines.
 ;
 
-;
-; interrupt INT0 - turn off timer 1
-;
-INT0_IR:
-	call	t1_clear
-	cbi	PORTB,3
-	reti
 
-;Second timer
-sec_timer:
-	push r16
-	push r17
-	;grab values
-	lds r17,secCountDis
-	lds r16,secCount
-	cpi r16,9 ;compare for value
-	breq clear_second
-	;increment the 2 variables
-	inc r16
-	inc r17
+;********************************Buttons****************************************
 
-	out PORTB,r17
-	;store new values
-	sts secCount,r16
-	sts secCountDis,r17
-	pop r17
-	pop r16
-	ret
-	clear_second:
-	clr r16
-	ldi r17,0x30
-	out PORTB,r16
-	sts secCount,r16
-	sts secCountDis,r17
-	pop r17
-	pop r16
-	ret
+;Function that switches from 12 to 24 hour Mode_24
+;It polls a switch on timer interupt and checks the hourmode and changes it
+change_Hour_Mode:
+poll_button:
+			push r16
+			push r17
+			push r18
+
+			lds r17,hourMode
+			ldi r16,0xff
+		polling:
+			sbic PIND,2
+			rjmp return_polling
+			dec r16
+			brne polling
+			tst r17
+			breq change_12Hour
+			clr r17
+			;call Mode12_24
+			rjmp return_polling
+
+			change_12Hour:
+			inc r17
+			;call Mode12_24
+
+		return_polling:
+			inc r18
+			sts button_1224,r18
+			sts hourMode,r17
+			pop r18
+			pop r17
+			pop r16
+			ret
+
+Alarm_OnOff:
+			push r16
+			push r17
+
+			lds r16,AlarmState
+			ldi r17,0xff
+pollingAlarm:
+			sbic PIND,7
+			rjmp return_pollingAlarm
+			dec r17
+			brne pollingAlarm
+			tst r16
+			breq AlarmOnState
+			clr r16
+			rjmp return_pollingAlarm
+AlarmOnState:
+			ldi r16,1
+
+return_pollingAlarm:
+			sts AlarmState,r16
+			pop r17
+			pop r16
+			ret
+
 
 
 
@@ -702,18 +1309,14 @@ sec_timer:
 ; interrupt timer 1 match compare B
 ;
 TIM1_COMPA:
-	call sec_timer
-	ldi r20,2
+	;call sec_timer
+	call change_Hour_Mode
+	call Alarm_OnOff
+	call updating
 	reti
 
 ;*******************************************************************************
 
-Str_Hello_World:
-	.db	"Hello, World", 0x0a, 0x0d, 0x00, 0x00
-Str_Welcome:
-	.db	"Welcome to ELEC342", 0x0a, 0x0d, 0x00, 0x00
-Str_NL:
-	.db	0x0a, 0x0d, 0x00, 0x00
 ;
 ;	Send the string pointed to by Z register
 ;
@@ -1074,3 +1677,45 @@ LCD_Setup_3:
 
 LCD_Setup_Err:
 	rjmp	main_loop
+
+
+;
+;SPI commands
+;
+; Send a command + byte to SPI interface
+; CMD is in r20, DATA is in r21
+; r16 is destroyed by this subroutine
+SPI_Send_Command:
+	cbi	PORTB,2		; SS low
+	ldi	r16,0x40
+	call	SPI_SendByte
+	mov	r16,r20
+	call	SPI_SendByte
+	mov	r16,r21
+	call	SPI_SendByte
+	sbi	PORTB,2		; and SS back high
+	ret
+; Send a command + byte to SPI interface
+; CMD is in r20, DATA is in r21 (if necessary)
+;
+SPI_Read_Command:
+	cbi	PORTB,2		; SS low
+	ldi	r16,0x41
+	call	SPI_SendByte
+	mov	r16,r20
+	call	SPI_SendByte
+	mov	r16,r21
+	call	SPI_SendByte
+	sbi	PORTB,2		; and SS back high
+	ret
+;
+; Send one SPI byte (Returned data in r16)
+;
+SPI_SendByte:
+	out	SPDR,r16
+SPI_wait:
+	in	r16,SPSR
+	sbrs	r16,SPIF
+	rjmp	SPI_wait
+	in	r16,SPDR
+	ret
